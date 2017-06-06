@@ -39,10 +39,20 @@ function fetchTopic(content, limit) {
         let query = new AV.Query('topic')
         query.equalTo('objectId', content)
         query.first().then(function(item) {
-            let sList = item.get('list').slice(0, limit).map(n => fetchSeriesItem(n.id))
+            let sList = item.get('list').slice(0, limit).map(n => fetchSeriesItemOne(n.id))
             Promise.all(sList).then(function(result) {
                 res(result)
             })
+        })
+    })
+}
+
+function fetchSeriesItemOne(content) {
+    return new Promise(function(res) {
+        let query = new AV.Query('series')
+        query.equalTo('objectId', content)
+        query.first().then(function(item) {
+            res(item)
         })
     })
 }
@@ -126,14 +136,53 @@ function releationSeries(item) {
     })
 }
 
+function userInfo(uid) {
+    return new Promise(function(req, rej) {
+        let query = new AV.Query('_User')
+        query.equalTo('objectId', uid)
+        query.first().then(function(item) {
+            req(item)
+        })
+    })
+}
+
+function fillDiscuss(item) {
+    return new Promise(function(req, rej) {
+        let uid = item.get('user_id').id
+        userInfo(uid).then(function(user) {
+            let userInfo = {
+                'nickname': user.get('nickname'),
+                'avatar': user.get('avatar')
+            }
+            item.set('user', userInfo)
+            req(item)
+        })
+    })
+}
+
+function fillAllDiscuss(results) {
+    return new Promise(function(req, res) {
+        let list = results.map(function(item) {
+            return fillDiscuss(item)
+        })
+
+        Promise.all(list).then(function(list) {
+            req(list)
+        })
+    })
+}
 
 function hotDiscuss(item) {
     return new Promise(function(res, rej) {
         let query = new AV.Query('discuss')
         query.equalTo('series_id', item)
         query.limit(10).find().then(function(results) {
-            item.set('discuss', results)
-            res(item)
+            fillAllDiscuss(results).then(function(list) {
+                res({
+                    'relate': item.get('relate'),
+                    'discuss': list
+                })
+            })
         }, function(error) {
             rej(error)
         })
@@ -147,6 +196,9 @@ AV.Cloud.define('series', function(request) {
         return releationSeries(item)
     }).then(function(item) {
         return hotDiscuss(item)
+    }).then(function(item) {
+        console.log(item)
+        return item
     }).catch(function(error) {
         throw error
     })
